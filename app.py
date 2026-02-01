@@ -1,21 +1,29 @@
 import streamlit as st
 from PIL import Image, ImageDraw
-import base64
-import io
 import os
 import requests
 
-st.set_page_config(page_title="Smart Parking Detection")
-st.title("🚗 Smart Parking Detection")
+# ---------------- PAGE CONFIG ----------------
+st.set_page_config(
+    page_title="Smart Parking Detection",
+    layout="centered"
+)
 
+st.title("🚗 Smart Parking Detection")
+st.write("Car detection using Roboflow Detect API")
+
+# ---------------- ROB0FLOW CONFIG ----------------
 API_KEY = os.environ.get("ROBOFLOW_API_KEY")
-WORKSPACE = "aswin-gdjej"
-WORKFLOW_ID = "find-cars"
+
+# 🔴 MUST MATCH YOUR ROB0FLOW MODEL EXACTLY
+MODEL_NAME = "find-cars"
+MODEL_VERSION = 1   # change ONLY if your model version is different
 
 if not API_KEY:
-    st.error("❌ ROBOFLOW_API_KEY not found")
+    st.error("❌ ROBOFLOW_API_KEY not found in Environment Variables")
     st.stop()
 
+# ---------------- IMAGE UPLOAD ----------------
 uploaded_file = st.file_uploader(
     "Upload Parking Image",
     type=["jpg", "jpeg", "png"]
@@ -23,73 +31,50 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file and st.button("🔍 Run Detection"):
 
+    # Show original image
     image = Image.open(uploaded_file).convert("RGB")
     st.image(image, caption="Original Image", use_container_width=True)
 
-    buffer = io.BytesIO()
-    image.save(buffer, format="JPEG")
-    img_base64 = base64.b64encode(buffer.getvalue()).decode()
+    # ✅ IMPORTANT: SEND RAW IMAGE BYTES (NO BASE64, NO RESIZE)
+    image_bytes = uploaded_file.getvalue()
 
-    url = f"https://serverless.roboflow.com/{WORKSPACE}/workflows/{WORKFLOW_ID}"
+    # Roboflow Detect API (RAPID)
+    url = f"https://detect.roboflow.com/{MODEL_NAME}/{MODEL_VERSION}?api_key={API_KEY}"
 
-    payload = {
-        "api_key": API_KEY,
-        "inputs": {
-            "image": {
-                "type": "base64",
-                "value": img_base64
-            }
-        }
-    }
-
-    response = requests.post(url, json=payload, timeout=60)
+    response = requests.post(
+        url,
+        files={"file": image_bytes},
+        timeout=60
+    )
 
     if response.status_code != 200:
         st.error("❌ Roboflow API request failed")
+        st.write("Status Code:", response.status_code)
         st.code(response.text)
         st.stop()
 
     result = response.json()
 
-    # ---------- SAFE EXTRACTION ----------
-    outputs = result.get("outputs", [])
-    if not outputs:
-        st.warning("No outputs from workflow")
-        st.json(result)
-        st.stop()
-
-    predictions = outputs[0].get("predictions", [])
-
-    # Force predictions into list
-    if isinstance(predictions, dict):
-        predictions = [predictions]
-    elif isinstance(predictions, str):
-        st.warning("Workflow returned label only, not bounding boxes")
-        st.write(predictions)
-        st.stop()
-    elif not isinstance(predictions, list):
-        st.warning("Unknown prediction format")
-        st.json(predictions)
-        st.stop()
+    predictions = result.get("predictions", [])
 
     draw = ImageDraw.Draw(image)
     car_count = 0
 
     for pred in predictions:
-
-        # 🔒 HARD SAFETY CHECK
+        # Safety check
         if not isinstance(pred, dict):
             continue
 
         if not all(k in pred for k in ("x", "y", "width", "height")):
             continue
 
-        x = float(pred["x"])
-        y = float(pred["y"])
-        w = float(pred["width"])
-        h = float(pred["height"])
-        conf = float(pred.get("confidence", 0))
+        x = pred["x"]
+        y = pred["y"]
+        w = pred["width"]
+        h = pred["height"]
+        conf = pred.get("confidence", 0)
 
+        # Convert center → bounding box
         x1, y1 = x - w / 2, y - h / 2
         x2, y2 = x + w / 2, y + h / 2
 
