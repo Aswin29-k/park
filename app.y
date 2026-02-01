@@ -1,9 +1,8 @@
 import streamlit as st
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 import base64
 import io
-from inference_sdk import InferenceHTTPClient
-
+import requests
 
 # ---------- PAGE CONFIG ----------
 st.set_page_config(
@@ -15,9 +14,9 @@ st.title("🚗 Smart Parking Detection")
 st.write("Upload an image and detect cars using Roboflow")
 
 # ---------- ROBOFLOW CONFIG ----------
-API_KEY = "VXketd8rJBvbWwf5E8EE"
 WORKSPACE = "aswin-gdjej"
 WORKFLOW_ID = "find-cars"
+API_KEY = st.secrets["VXketd8rJBvbWwf5E8EE"]  # ✅ environment variable
 
 # ---------- IMAGE UPLOAD ----------
 uploaded_file = st.file_uploader(
@@ -32,27 +31,30 @@ if uploaded_file:
     if st.button("🔍 Run Detection"):
         with st.spinner("Detecting..."):
 
-            # Convert image to Base64
+            # Convert image to base64
             buffer = io.BytesIO()
             image.save(buffer, format="JPEG")
             img_base64 = base64.b64encode(buffer.getvalue()).decode()
 
-            # Roboflow client
-            client = InferenceHTTPClient(
-                api_url="https://serverless.roboflow.com",
-                api_key=API_KEY
-            )
+            # Roboflow HTTP API
+            url = f"https://serverless.roboflow.com/inference/workflows/{WORKSPACE}/{WORKFLOW_ID}"
 
-            # Run workflow
-            result = client.run_workflow(
-                workspace_name=WORKSPACE,
-                workflow_id=WORKFLOW_ID,
-                images={"image": img_base64}
-            )
+            payload = {
+                "api_key": API_KEY,
+                "inputs": {
+                    "image": {
+                        "type": "base64",
+                        "value": img_base64
+                    }
+                }
+            }
+
+            response = requests.post(url, json=payload)
+            result = response.json()
 
         # ----------- DRAW DETECTIONS ----------
         draw = ImageDraw.Draw(image)
-        predictions = result[0]["predictions"]["predictions"]
+        predictions = result["outputs"][0]["predictions"]["predictions"]
 
         car_count = 0
 
@@ -63,18 +65,14 @@ if uploaded_file:
             h = pred["height"]
             conf = pred["confidence"]
 
-            # Convert center → box
+            # Center → box
             x1 = x - w / 2
             y1 = y - h / 2
             x2 = x + w / 2
             y2 = y + h / 2
 
-            # Draw rectangle
             draw.rectangle([x1, y1, x2, y2], outline="red", width=3)
-
-            # Label
-            label = f"Car {conf:.2f}"
-            draw.text((x1, y1 - 10), label, fill="red")
+            draw.text((x1, y1 - 10), f"Car {conf:.2f}", fill="red")
 
             car_count += 1
 
