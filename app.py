@@ -1,103 +1,64 @@
 import streamlit as st
 from PIL import Image, ImageDraw
-import base64
-import io
 import os
 import requests
 
-# ---------------- PAGE CONFIG ----------------
-st.set_page_config(
-    page_title="Smart Parking Detection",
-    layout="centered"
-)
+st.set_page_config(page_title="Smart Parking Detection")
 
 st.title("🚗 Smart Parking Detection")
-st.write("Upload an image and detect parked cars using Roboflow Workflow")
 
-# ---------------- ENV VARIABLES ----------------
 API_KEY = os.environ.get("ROBOFLOW_API_KEY")
-WORKSPACE = "aswin-gdjej"
-WORKFLOW_ID = "find-cars"
+MODEL = "find-cars"
+VERSION = X   # 🔴 Replace X with your model version number
 
 if not API_KEY:
-    st.error("❌ ROBOFLOW_API_KEY not found in Render Environment Variables")
+    st.error("❌ ROBOFLOW_API_KEY not found")
     st.stop()
 
-# ---------------- IMAGE UPLOAD ----------------
 uploaded_file = st.file_uploader(
     "Upload Parking Image",
     type=["jpg", "jpeg", "png"]
 )
 
-if uploaded_file is not None:
+if uploaded_file and st.button("🔍 Run Detection"):
+
     image = Image.open(uploaded_file).convert("RGB")
     st.image(image, caption="Original Image", use_container_width=True)
 
-    # 🔴 IMPORTANT: API call happens ONLY on button click (avoids 405)
-    if st.button("🔍 Run Detection"):
-        with st.spinner("Detecting cars..."):
+    url = f"https://detect.roboflow.com/{MODEL}/{VERSION}?api_key={API_KEY}"
 
-            # Convert image → base64
-            buffer = io.BytesIO()
-            image.save(buffer, format="JPEG")
-            img_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+    response = requests.post(
+        url,
+        files={"file": uploaded_file.getvalue()},
+        timeout=60
+    )
 
-            # ✅ CORRECT Roboflow Workflow endpoint
-            url = (
-                f"https://serverless.roboflow.com/workflows/"
-                f"{WORKSPACE}/{WORKFLOW_ID}"
-            )
+    st.write("Status Code:", response.status_code)
 
-            params = {
-                "api_key": API_KEY
-            }
+    if response.status_code != 200:
+        st.error("❌ Roboflow API request failed")
+        st.code(response.text)
+        st.stop()
 
-            payload = {
-                "inputs": {
-                    "image": {
-                        "type": "base64",
-                        "value": img_base64
-                    }
-                }
-            }
+    result = response.json()
 
-            # ✅ POST request ONLY
-            response = requests.post(
-                url,
-                params=params,
-                json=payload,
-                timeout=60
-            )
+    draw = ImageDraw.Draw(image)
+    predictions = result["predictions"]
 
-            if response.status_code != 200:
-                st.error("❌ Roboflow API request failed")
-                st.code(response.text)
-                st.stop()
+    car_count = 0
 
-            result = response.json()
+    for pred in predictions:
+        x, y = pred["x"], pred["y"]
+        w, h = pred["width"], pred["height"]
+        conf = pred["confidence"]
 
-        # ---------------- DRAW DETECTIONS ----------------
-        draw = ImageDraw.Draw(image)
-        predictions = result["outputs"][0]["predictions"]
+        x1, y1 = x - w/2, y - h/2
+        x2, y2 = x + w/2, y + h/2
 
-        car_count = 0
+        draw.rectangle([x1, y1, x2, y2], outline="red", width=3)
+        draw.text((x1, y1 - 10), f"Car {conf:.2f}", fill="red")
 
-        for pred in predictions:
-            x = pred["x"]
-            y = pred["y"]
-            w = pred["width"]
-            h = pred["height"]
-            conf = pred["confidence"]
+        car_count += 1
 
-            x1 = x - w / 2
-            y1 = y - h / 2
-            x2 = x + w / 2
-            y2 = y + h / 2
-
-            draw.rectangle([x1, y1, x2, y2], outline="red", width=3)
-            draw.text((x1, y1 - 12), f"Car {conf:.2f}", fill="red")
-
-            car_count += 1
-
-        st.image(image, caption="Detected Cars", use_container_width=True)
-        st.success(f"🚗 Total Cars Detected: {car_count}")
+    st.image(image, caption="Detected Cars", use_container_width=True)
+    st.success(f"🚗 Cars Detected: {car_count}")
