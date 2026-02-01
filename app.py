@@ -5,13 +5,9 @@ import io
 import os
 import requests
 
-# ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="Smart Parking Detection")
-
 st.title("🚗 Smart Parking Detection")
-st.write("Roboflow Workflow – Car Detection")
 
-# ---------------- ROB0FLOW CONFIG ----------------
 API_KEY = os.environ.get("ROBOFLOW_API_KEY")
 WORKSPACE = "aswin-gdjej"
 WORKFLOW_ID = "find-cars"
@@ -20,7 +16,6 @@ if not API_KEY:
     st.error("❌ ROBOFLOW_API_KEY not found")
     st.stop()
 
-# ---------------- IMAGE UPLOAD ----------------
 uploaded_file = st.file_uploader(
     "Upload Parking Image",
     type=["jpg", "jpeg", "png"]
@@ -56,18 +51,44 @@ if uploaded_file and st.button("🔍 Run Detection"):
 
     result = response.json()
 
-    # ---------------- ✅ CORRECT PARSING ----------------
-    predictions = result["outputs"][0]["predictions"]
+    # ---------- SAFE EXTRACTION ----------
+    outputs = result.get("outputs", [])
+    if not outputs:
+        st.warning("No outputs from workflow")
+        st.json(result)
+        st.stop()
+
+    predictions = outputs[0].get("predictions", [])
+
+    # Force predictions into list
+    if isinstance(predictions, dict):
+        predictions = [predictions]
+    elif isinstance(predictions, str):
+        st.warning("Workflow returned label only, not bounding boxes")
+        st.write(predictions)
+        st.stop()
+    elif not isinstance(predictions, list):
+        st.warning("Unknown prediction format")
+        st.json(predictions)
+        st.stop()
 
     draw = ImageDraw.Draw(image)
     car_count = 0
 
     for pred in predictions:
-        x = pred["x"]
-        y = pred["y"]
-        w = pred["width"]
-        h = pred["height"]
-        conf = pred["confidence"]
+
+        # 🔒 HARD SAFETY CHECK
+        if not isinstance(pred, dict):
+            continue
+
+        if not all(k in pred for k in ("x", "y", "width", "height")):
+            continue
+
+        x = float(pred["x"])
+        y = float(pred["y"])
+        w = float(pred["width"])
+        h = float(pred["height"])
+        conf = float(pred.get("confidence", 0))
 
         x1, y1 = x - w / 2, y - h / 2
         x2, y2 = x + w / 2, y + h / 2
@@ -77,5 +98,8 @@ if uploaded_file and st.button("🔍 Run Detection"):
 
         car_count += 1
 
-    st.image(image, caption="Detected Cars", use_container_width=True)
-    st.success(f"🚗 Cars Detected: {car_count}")
+    if car_count == 0:
+        st.warning("⚠️ No cars detected in this image")
+    else:
+        st.image(image, caption="Detected Cars", use_container_width=True)
+        st.success(f"🚗 Cars Detected: {car_count}")
