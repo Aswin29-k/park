@@ -5,25 +5,25 @@ import io
 import os
 import requests
 
-# ---------- PAGE CONFIG ----------
+# ---------------- PAGE CONFIG ----------------
 st.set_page_config(
     page_title="Smart Parking Detection",
     layout="centered"
 )
 
 st.title("🚗 Smart Parking Detection")
-st.write("Upload an image and detect cars using Roboflow")
+st.write("Upload an image and detect parked cars using Roboflow Workflow")
 
-# ---------- ENVIRONMENT VARIABLES ----------
+# ---------------- ENV VARIABLES ----------------
 API_KEY = os.environ.get("ROBOFLOW_API_KEY")
 WORKSPACE = "aswin-gdjej"
 WORKFLOW_ID = "find-cars"
 
 if not API_KEY:
-    st.error("❌ ROBOFLOW_API_KEY not found in Render Environment Variables")
+    st.error("❌ ROBOFLOW_API_KEY not found in Environment Variables")
     st.stop()
 
-# ---------- IMAGE UPLOAD ----------
+# ---------------- IMAGE UPLOAD ----------------
 uploaded_file = st.file_uploader(
     "Upload Parking Image",
     type=["jpg", "jpeg", "png"]
@@ -39,14 +39,13 @@ if uploaded_file:
             # Convert image to base64
             buffer = io.BytesIO()
             image.save(buffer, format="JPEG")
-            img_base64 = base64.b64encode(buffer.getvalue()).decode()
+            img_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
-            # Roboflow HTTP API
-            url = f"https://serverless.roboflow.com/workflows/{WORKSPACE}/{WORKFLOW_ID}"
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {API_KEY}"
-            }
+            # Roboflow Workflow API (CORRECT METHOD)
+            url = (
+                f"https://serverless.roboflow.com/workflows/"
+                f"{WORKSPACE}/{WORKFLOW_ID}?api_key={API_KEY}"
+            )
 
             payload = {
                 "inputs": {
@@ -57,16 +56,16 @@ if uploaded_file:
                 }
             }
 
-            response = requests.post(url, json=payload, headers=headers)
+            response = requests.post(url, json=payload, timeout=60)
 
             if response.status_code != 200:
                 st.error("❌ Roboflow API request failed")
-                st.text(response.text)
+                st.code(response.text)
                 st.stop()
 
             result = response.json()
 
-        # ---------- DRAW DETECTIONS ----------
+        # ---------------- DRAW DETECTIONS ----------------
         draw = ImageDraw.Draw(image)
         predictions = result["outputs"][0]["predictions"]
 
@@ -79,16 +78,16 @@ if uploaded_file:
             h = pred["height"]
             conf = pred["confidence"]
 
-            # Convert center → box
+            # Convert center coordinates → bounding box
             x1 = x - w / 2
             y1 = y - h / 2
             x2 = x + w / 2
             y2 = y + h / 2
 
             draw.rectangle([x1, y1, x2, y2], outline="red", width=3)
-            draw.text((x1, y1 - 10), f"Car {conf:.2f}", fill="red")
+            draw.text((x1, y1 - 12), f"Car {conf:.2f}", fill="red")
 
             car_count += 1
 
         st.image(image, caption="Detected Cars", use_container_width=True)
-        st.success(f"🚗 Cars Detected: {car_count}")
+        st.success(f"🚗 Total Cars Detected: {car_count}")
