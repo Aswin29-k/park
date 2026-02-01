@@ -2,6 +2,7 @@ import streamlit as st
 from PIL import Image, ImageDraw
 import base64
 import io
+import os
 import requests
 
 # ---------- PAGE CONFIG ----------
@@ -13,11 +14,14 @@ st.set_page_config(
 st.title("🚗 Smart Parking Detection")
 st.write("Upload an image and detect cars using Roboflow")
 
-# ---------- ROBOFLOW CONFIG ----------
+# ---------- ENVIRONMENT VARIABLES ----------
+API_KEY = os.environ.get("ROBOFLOW_API_KEY")
 WORKSPACE = "aswin-gdjej"
 WORKFLOW_ID = "find-cars"
-API_KEY = st.secrets["ROBOFLOW_API_KEY"]
-  # ✅ environment variable
+
+if not API_KEY:
+    st.error("❌ ROBOFLOW_API_KEY not found in Render Environment Variables")
+    st.stop()
 
 # ---------- IMAGE UPLOAD ----------
 uploaded_file = st.file_uploader(
@@ -30,7 +34,7 @@ if uploaded_file:
     st.image(image, caption="Original Image", use_container_width=True)
 
     if st.button("🔍 Run Detection"):
-        with st.spinner("Detecting..."):
+        with st.spinner("Detecting cars..."):
 
             # Convert image to base64
             buffer = io.BytesIO()
@@ -38,10 +42,13 @@ if uploaded_file:
             img_base64 = base64.b64encode(buffer.getvalue()).decode()
 
             # Roboflow HTTP API
-            url = f"https://serverless.roboflow.com/inference/workflows/{WORKSPACE}/{WORKFLOW_ID}"
+            url = f"https://serverless.roboflow.com/workflows/{WORKSPACE}/{WORKFLOW_ID}"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {API_KEY}"
+            }
 
             payload = {
-                "api_key": API_KEY,
                 "inputs": {
                     "image": {
                         "type": "base64",
@@ -50,12 +57,18 @@ if uploaded_file:
                 }
             }
 
-            response = requests.post(url, json=payload)
+            response = requests.post(url, json=payload, headers=headers)
+
+            if response.status_code != 200:
+                st.error("❌ Roboflow API request failed")
+                st.text(response.text)
+                st.stop()
+
             result = response.json()
 
-        # ----------- DRAW DETECTIONS ----------
+        # ---------- DRAW DETECTIONS ----------
         draw = ImageDraw.Draw(image)
-        predictions = result["outputs"][0]["predictions"]["predictions"]
+        predictions = result["outputs"][0]["predictions"]
 
         car_count = 0
 
@@ -66,7 +79,7 @@ if uploaded_file:
             h = pred["height"]
             conf = pred["confidence"]
 
-            # Center → box
+            # Convert center → box
             x1 = x - w / 2
             y1 = y - h / 2
             x2 = x + w / 2
