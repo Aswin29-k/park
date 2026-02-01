@@ -9,7 +9,7 @@ import requests
 st.set_page_config(page_title="Smart Parking Detection")
 
 st.title("🚗 Smart Parking Detection")
-st.write("Upload an image and detect cars using Roboflow Workflow")
+st.write("Roboflow Workflow – Car Detection")
 
 # ---------------- ROB0FLOW CONFIG ----------------
 API_KEY = os.environ.get("ROBOFLOW_API_KEY")
@@ -17,7 +17,7 @@ WORKSPACE = "aswin-gdjej"
 WORKFLOW_ID = "find-cars"
 
 if not API_KEY:
-    st.error("❌ ROBOFLOW_API_KEY not found in Environment Variables")
+    st.error("❌ ROBOFLOW_API_KEY not found")
     st.stop()
 
 # ---------------- IMAGE UPLOAD ----------------
@@ -28,16 +28,13 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file and st.button("🔍 Run Detection"):
 
-    # Load image
     image = Image.open(uploaded_file).convert("RGB")
     st.image(image, caption="Original Image", use_container_width=True)
 
-    # Convert to base64
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG")
     img_base64 = base64.b64encode(buffer.getvalue()).decode()
 
-    # Workflow API URL
     url = f"https://serverless.roboflow.com/{WORKSPACE}/workflows/{WORKFLOW_ID}"
 
     payload = {
@@ -59,53 +56,19 @@ if uploaded_file and st.button("🔍 Run Detection"):
 
     result = response.json()
 
-    # ---------------- SAFE PARSING ----------------
-    outputs = result.get("outputs", [])
-
-    if not outputs:
-        st.warning("⚠️ No outputs returned from workflow")
-        st.json(result)
-        st.stop()
-
-    output_block = outputs[0].get("output", {})
-    predictions = output_block.get("predictions", [])
+    # ---------------- ✅ CORRECT PARSING ----------------
+    predictions = result["outputs"][0]["predictions"]
 
     draw = ImageDraw.Draw(image)
     car_count = 0
-    boxes_found = False
 
-    # If predictions is a STRING (classification)
-    if isinstance(predictions, str):
-        st.warning("⚠️ Workflow returned label only (no bounding boxes)")
-        st.write("Prediction:", predictions)
-        st.stop()
-
-    # If predictions is NOT list
-    if not isinstance(predictions, list):
-        st.warning("⚠️ Unexpected prediction format")
-        st.json(predictions)
-        st.stop()
-
-    # Iterate safely
     for pred in predictions:
+        x = pred["x"]
+        y = pred["y"]
+        w = pred["width"]
+        h = pred["height"]
+        conf = pred["confidence"]
 
-        # Skip if not dict
-        if not isinstance(pred, dict):
-            continue
-
-        x = pred.get("x")
-        y = pred.get("y")
-        w = pred.get("width")
-        h = pred.get("height")
-        conf = pred.get("confidence", 0)
-
-        # Skip invalid detections
-        if None in (x, y, w, h):
-            continue
-
-        boxes_found = True
-
-        # Convert center → box
         x1, y1 = x - w / 2, y - h / 2
         x2, y2 = x + w / 2, y + h / 2
 
@@ -114,10 +77,5 @@ if uploaded_file and st.button("🔍 Run Detection"):
 
         car_count += 1
 
-    # ---------------- DISPLAY RESULT ----------------
-    if boxes_found:
-        st.image(image, caption="Detected Cars", use_container_width=True)
-        st.success(f"🚗 Cars Detected: {car_count}")
-    else:
-        st.warning("⚠️ No bounding boxes found in workflow output")
-        st.json(predictions)
+    st.image(image, caption="Detected Cars", use_container_width=True)
+    st.success(f"🚗 Cars Detected: {car_count}")
