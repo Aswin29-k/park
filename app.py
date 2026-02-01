@@ -16,7 +16,8 @@ st.write("Upload an image and detect cars using Roboflow")
 # ---------- ROBOFLOW CONFIG ----------
 WORKSPACE = "aswin-gdjej"
 WORKFLOW_ID = "find-cars"
-API_KEY = st.secrets["VXketd8rJBvbWwf5E8EE"]  # ✅ environment variable
+API_KEY = st.secrets["ROBOFLOW_API_KEY"]
+  # ✅ environment variable
 
 # ---------- IMAGE UPLOAD ----------
 uploaded_file = st.file_uploader(
