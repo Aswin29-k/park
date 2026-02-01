@@ -20,7 +20,7 @@ WORKSPACE = "aswin-gdjej"
 WORKFLOW_ID = "find-cars"
 
 if not API_KEY:
-    st.error("❌ ROBOFLOW_API_KEY not found in Environment Variables")
+    st.error("❌ ROBOFLOW_API_KEY not found in Render Environment Variables")
     st.stop()
 
 # ---------------- IMAGE UPLOAD ----------------
@@ -29,23 +29,28 @@ uploaded_file = st.file_uploader(
     type=["jpg", "jpeg", "png"]
 )
 
-if uploaded_file:
+if uploaded_file is not None:
     image = Image.open(uploaded_file).convert("RGB")
     st.image(image, caption="Original Image", use_container_width=True)
 
+    # 🔴 IMPORTANT: API call happens ONLY on button click (avoids 405)
     if st.button("🔍 Run Detection"):
         with st.spinner("Detecting cars..."):
 
-            # Convert image to base64
+            # Convert image → base64
             buffer = io.BytesIO()
             image.save(buffer, format="JPEG")
             img_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
-            # Roboflow Workflow API (CORRECT METHOD)
+            # ✅ CORRECT Roboflow Workflow endpoint
             url = (
                 f"https://serverless.roboflow.com/workflows/"
-                f"{WORKSPACE}/{WORKFLOW_ID}?api_key={API_KEY}"
+                f"{WORKSPACE}/{WORKFLOW_ID}"
             )
+
+            params = {
+                "api_key": API_KEY
+            }
 
             payload = {
                 "inputs": {
@@ -56,7 +61,13 @@ if uploaded_file:
                 }
             }
 
-            response = requests.post(url, json=payload, timeout=60)
+            # ✅ POST request ONLY
+            response = requests.post(
+                url,
+                params=params,
+                json=payload,
+                timeout=60
+            )
 
             if response.status_code != 200:
                 st.error("❌ Roboflow API request failed")
@@ -78,7 +89,6 @@ if uploaded_file:
             h = pred["height"]
             conf = pred["confidence"]
 
-            # Convert center coordinates → bounding box
             x1 = x - w / 2
             y1 = y - h / 2
             x2 = x + w / 2
