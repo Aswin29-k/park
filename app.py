@@ -6,7 +6,6 @@ import os
 import requests
 
 st.set_page_config(page_title="Smart Parking Detection")
-
 st.title("🚗 Smart Parking Detection")
 
 API_KEY = os.environ.get("ROBOFLOW_API_KEY")
@@ -52,21 +51,25 @@ if uploaded_file and st.button("🔍 Run Detection"):
 
     result = response.json()
 
-    # ---- DRAW RESULTS ----
-    draw = ImageDraw.Draw(image)
-    predictions = result["outputs"][0]["predictions"]
+    # ✅ CORRECT WORKFLOW PARSING
+    predictions = result["outputs"][0]["output"]["predictions"]
 
+    draw = ImageDraw.Draw(image)
     car_count = 0
+
     for pred in predictions:
-        x, y = pred["x"], pred["y"]
-        w, h = pred["width"], pred["height"]
+        x = pred["x"]
+        y = pred["y"]
+        w = pred["width"]
+        h = pred["height"]
         conf = pred["confidence"]
 
-        x1, y1 = x - w/2, y - h/2
-        x2, y2 = x + w/2, y + h/2
+        x1, y1 = x - w / 2, y - h / 2
+        x2, y2 = x + w / 2, y + h / 2
 
         draw.rectangle([x1, y1, x2, y2], outline="red", width=3)
         draw.text((x1, y1 - 10), f"Car {conf:.2f}", fill="red")
+
         car_count += 1
 
     st.image(image, caption="Detected Cars", use_container_width=True)
